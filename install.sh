@@ -49,6 +49,14 @@ bindir=$prefix/bin
 appdir=$datadir/applications
 icondir=$datadir/icons/hicolor
 
+# The desktop entry quotes the binary path; these characters would need escaping there.
+case $bindir in
+    *[\"\`\$\\]*)
+        echo "install.sh: the install path can't contain \", \`, \$ or \\: $bindir" >&2
+        exit 1
+        ;;
+esac
+
 # Use sudo only when the target isn't writable.
 SUDO=
 probe=$prefix
@@ -110,14 +118,23 @@ if [ -z "$binary" ]; then
     fi
 fi
 
+# Find every file before touching the system, so a broken tarball installs nothing.
+desktop_file=$(asset steamidfinder.desktop) || exit 1
+svg_icon=$(asset steamidfinder.svg) || exit 1
+png_icon=$(asset icon-256.png) || exit 1
+
 $SUDO mkdir -p "$bindir" "$appdir" "$icondir/scalable/apps" "$icondir/256x256/apps"
 $SUDO install -m 755 "$binary" "$bindir/steamidfinder"
-$SUDO install -m 644 "$(asset steamidfinder.svg)" "$icondir/scalable/apps/steamidfinder.svg"
-$SUDO install -m 644 "$(asset icon-256.png)" "$icondir/256x256/apps/steamidfinder.png"
+$SUDO install -m 644 "$svg_icon" "$icondir/scalable/apps/steamidfinder.svg"
+$SUDO install -m 644 "$png_icon" "$icondir/256x256/apps/steamidfinder.png"
 # Launchers don't always inherit a PATH containing ~/.local/bin, so point Exec at the binary.
-sed "s|^Exec=steamidfinder\$|Exec=\"$bindir/steamidfinder\"|" "$(asset steamidfinder.desktop)" |
-    $SUDO tee "$appdir/steamidfinder.desktop" >/dev/null
-$SUDO chmod 644 "$appdir/steamidfinder.desktop"
+tmp_desktop=$(mktemp)
+STEAMIDFINDER_BIN="$bindir/steamidfinder" awk '
+    $0 == "Exec=steamidfinder" { print "Exec=\"" ENVIRON["STEAMIDFINDER_BIN"] "\""; next }
+    { print }
+' "$desktop_file" >"$tmp_desktop"
+$SUDO install -m 644 "$tmp_desktop" "$appdir/steamidfinder.desktop"
+rm -f "$tmp_desktop"
 refresh_caches
 
 echo "Installed SteamIDfinder: $bindir/steamidfinder"

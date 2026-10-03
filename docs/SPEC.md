@@ -78,7 +78,7 @@ not Steam's logo (trademark).
 - Linux AppImage `SteamIDfinder-<ver>-x86_64.AppImage`.
 - Windows portable `SteamIDfinder-<ver>-windows-x86_64.exe`: embedded icon, no console
   window, no installer. Unsigned (SmartScreen warns).
-- Linux CI builds run on Ubuntu 22.04 for glibc compatibility.
+- Linux release builds run in an Ubuntu 22.04 container for glibc compatibility.
 - `install.sh` (POSIX sh): works from a release tarball or a source checkout (builds if
   needed); per-user install by default (`~/.local`), `--system` for `/usr/local` via sudo,
   `--uninstall`; rewrites the desktop entry's `Exec` to the absolute binary path; refreshes

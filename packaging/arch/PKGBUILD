@@ -1,3 +1,5 @@
+# Maintainer: Alelau18 <https://github.com/Alelau18>
+#
 # Self-build package for Arch Linux, tracking the latest commit on main.
 # Not published to the AUR. Build and install with:
 #   cd packaging/arch && makepkg -si
@@ -9,7 +11,8 @@ pkgdesc='Turn any Steam ID into a Steam profile link, with name, avatar and name
 arch=('x86_64' 'aarch64')
 url='https://github.com/Alelau18/SteamIDfinder'
 license=('MIT')
-depends=('gcc-libs' 'glibc' 'hicolor-icon-theme' 'libglvnd' 'libxkbcommon' 'wayland')
+# libglvnd, libxkbcommon and wayland are dlopen()ed at runtime, so namcap can't see them.
+depends=('glibc' 'hicolor-icon-theme' 'libgcc' 'libglvnd' 'libxkbcommon' 'wayland')
 makedepends=('cargo' 'git')
 optdepends=(
   'libx11: X11 session support'
@@ -20,6 +23,9 @@ optdepends=(
 )
 provides=('steamidfinder')
 conflicts=('steamidfinder')
+# makepkg's LTO puts GCC bitcode in ring's C objects, which the Rust link can't use.
+# Cargo already strips the binary, so a -debug package would be empty.
+options=('!lto' '!debug')
 source=("git+$url.git")
 sha256sums=('SKIP')
 

@@ -113,9 +113,23 @@ pub fn split_inputs(text: &str) -> impl Iterator<Item = &str> {
 
 /// Parses one token in any supported notation.
 pub fn parse(token: &str) -> Result<Parsed, String> {
-    let token = token
-        .trim()
-        .trim_matches(|c: char| matches!(c, '<' | '>' | '"' | '\'' | '(' | ')' | '`'));
+    // Web copy-paste often drags along brackets, quotes and invisible characters.
+    let token = token.trim_matches(|c: char| {
+        c.is_whitespace()
+            || matches!(
+                c,
+                '<' | '>'
+                    | '"'
+                    | '\''
+                    | '('
+                    | ')'
+                    | '`'
+                    | '\u{200b}'
+                    | '\u{200e}'
+                    | '\u{200f}'
+                    | '\u{feff}'
+            )
+    });
     if token.is_empty() {
         return Err("empty input".into());
     }
@@ -168,6 +182,10 @@ fn parse_steam2(token: &str) -> Result<Option<SteamId>, String> {
     let Some(rest) = strip_prefix_ignore_case(token, "STEAM_") else {
         return Ok(None);
     };
+    // `steam_fan` is a custom URL name, not a malformed SteamID2.
+    if !rest.bytes().all(|b| b.is_ascii_digit() || b == b':') {
+        return Ok(None);
+    }
     let invalid = || format!("{token} isn't a valid SteamID2");
     let mut parts = rest.split(':');
     let (Some(universe), Some(y), Some(z), None) =
@@ -384,6 +402,21 @@ mod tests {
         ] {
             assert!(parse(input).is_err(), "{input:?} should be rejected");
         }
+    }
+
+    #[test]
+    fn steam_prefixed_names_are_vanity_names() {
+        for name in ["steam_user", "STEAM_DECK", "steam_fan"] {
+            assert_eq!(parse(name).unwrap().format, Format::VanityName, "{name}");
+        }
+    }
+
+    #[test]
+    fn strips_invisible_characters() {
+        assert_eq!(
+            id_of("\u{feff}76561197960287930\u{200b}"),
+            (Format::Id64, GABEN)
+        );
     }
 
     #[test]

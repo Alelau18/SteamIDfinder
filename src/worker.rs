@@ -1,9 +1,10 @@
 //! Background lookups on a small thread pool, reporting back to the UI over a channel.
 
-use std::fs;
+use std::fs::{self, File};
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex, mpsc};
 use std::thread;
+use std::time::SystemTime;
 
 use eframe::egui;
 
@@ -24,6 +25,8 @@ pub struct Resolved {
     pub avatar: Option<PathBuf>,
     /// The history entry after this lookup was recorded, carrying renames the app observed.
     pub entry: Option<HistoryEntry>,
+    /// Why recording the lookup in the history failed, if it did.
+    pub history_error: Option<String>,
 }
 
 pub struct Outcome {
@@ -96,22 +99,25 @@ fn lookup(client: &Client, history: &History, target: &Target) -> Result<Resolve
         .as_ref()
         .and_then(|p| p.file_name())
         .and_then(|n| n.to_str());
-    let entry = history
-        .record(
-            Record {
-                id64: profile.id.id64(),
-                name: &profile.name,
-                avatar_file,
-                custom_url: profile.custom_url.as_deref(),
-            },
-            chrono::Utc::now().timestamp(),
-        )
-        .ok();
+    let recorded = history.record(
+        Record {
+            id64: profile.id.id64(),
+            name: &profile.name,
+            avatar_file,
+            custom_url: profile.custom_url.as_deref(),
+        },
+        chrono::Utc::now().timestamp(),
+    );
+    let (entry, history_error) = match recorded {
+        Ok(entry) => (Some(entry), None),
+        Err(err) => (None, Some(err.to_string())),
+    };
     Ok(Resolved {
         profile,
         aliases,
         avatar,
         entry,
+        history_error,
     })
 }
 
@@ -121,11 +127,17 @@ fn cache_avatar(client: &Client, history: &History, url: &str) -> Option<PathBuf
     let dir = history.avatar_dir();
     let path = dir.join(&name);
     if path.is_file() {
+        // Refresh the timestamp so another window's avatar pruning leaves it alone until this
+        // lookup is recorded.
+        if let Ok(file) = File::options().write(true).open(&path) {
+            let _ = file.set_modified(SystemTime::now());
+        }
         return Some(path);
     }
     let bytes = client.download(url).ok()?;
     fs::create_dir_all(&dir).ok()?;
-    let tmp = dir.join(format!(".{name}.tmp-{:?}", thread::current().id()).replace(['(', ')'], ""));
+    let thread = format!("{:?}", thread::current().id()).replace(['(', ')'], "");
+    let tmp = dir.join(format!(".{name}.tmp-{}-{thread}", std::process::id()));
     fs::write(&tmp, bytes).ok()?;
     fs::rename(&tmp, &path).ok()?;
     Some(path)

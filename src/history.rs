@@ -105,12 +105,14 @@ impl History {
                     renames: Vec::new(),
                 },
             };
-            if entry.name != record.name && !record.name.is_empty() {
+            if entry.name != record.name && !record.name.is_empty() && !entry.name.is_empty() {
                 entry.renames.push(SeenRename {
                     from: std::mem::take(&mut entry.name),
                     to: record.name.to_string(),
                     at: now,
                 });
+                entry.name = record.name.to_string();
+            } else if !record.name.is_empty() {
                 entry.name = record.name.to_string();
             }
             if record.avatar_file.is_some() {
@@ -135,7 +137,12 @@ impl History {
 
     fn mutate<R>(&self, change: impl FnOnce(&mut Vec<HistoryEntry>) -> R) -> io::Result<R> {
         fs::create_dir_all(&self.dir)?;
-        let lock = File::create(self.dir.join("history.lock"))?;
+        let lock = File::options()
+            .read(true)
+            .write(true)
+            .create(true)
+            .truncate(false)
+            .open(self.dir.join("history.lock"))?;
         lock.lock()?;
 
         let path = self.history_path();

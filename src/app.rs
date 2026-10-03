@@ -12,7 +12,7 @@ use eframe::egui::{
 use crate::history::{History, HistoryEntry};
 use crate::profile::{FetchError, OnlineState, Profile};
 use crate::steamid::{self, Format, SteamId, Target};
-use crate::worker::{Job, Pool, Resolved};
+use crate::worker::{Job, Outcome, Pool, Resolved};
 
 const WORKER_THREADS: usize = 4;
 const COPIED_FEEDBACK_SECS: f64 = 1.5;
@@ -243,24 +243,42 @@ impl App {
 
     fn receive_outcomes(&mut self) {
         while let Some(outcome) = self.pool.try_recv() {
-            self.history_stale = true;
-            let uid = outcome.card;
-            if let Ok(resolved) = &outcome.result {
-                // A custom URL may resolve to a profile that's already listed.
-                let id = resolved.profile.id;
-                self.cards
-                    .retain(|c| c.uid == uid || c.steam_id() != Some(id));
-            }
-            let Some(card) = self.cards.iter_mut().find(|c| c.uid == uid) else {
-                continue;
-            };
-            if let CardKind::Lookup(lookup) = &mut card.kind {
-                lookup.state = match outcome.result {
-                    Ok(resolved) => CardState::Done(Box::new(resolved)),
-                    Err(err) => CardState::Failed(err),
-                };
-            }
+            self.apply_outcome(outcome);
         }
+    }
+
+    fn apply_outcome(&mut self, outcome: Outcome) {
+        self.history_stale = true;
+        if let Ok(Resolved {
+            history_error: Some(err),
+            ..
+        }) = &outcome.result
+        {
+            self.notice = Some(format!("Couldn't save to history: {err}"));
+        }
+        // The card may have been dismissed or replaced by a newer lookup of the same profile.
+        let Some(pos) = self.cards.iter().position(|c| c.uid == outcome.card) else {
+            return;
+        };
+        let mut card = self.cards.remove(pos);
+        let CardKind::Lookup(lookup) = &mut card.kind else {
+            return;
+        };
+        let mut insert_at = pos;
+        match outcome.result {
+            Ok(resolved) => {
+                // A custom URL may resolve to a profile that's already listed: keep one card,
+                // at the higher of the two positions.
+                let id = resolved.profile.id;
+                if let Some(dup) = self.cards.iter().position(|c| c.steam_id() == Some(id)) {
+                    insert_at = insert_at.min(dup);
+                    self.cards.retain(|c| c.steam_id() != Some(id));
+                }
+                lookup.state = CardState::Done(Box::new(resolved));
+            }
+            Err(err) => lookup.state = CardState::Failed(err),
+        }
+        self.cards.insert(insert_at.min(self.cards.len()), card);
     }
 
     fn apply(&mut self, ctx: &egui::Context, actions: Vec<Action>, now: f64) {
@@ -340,7 +358,13 @@ impl App {
         ui.horizontal(|ui| {
             let results = format!("Results ({})", self.cards.len());
             ui.selectable_value(&mut self.tab, Tab::Results, results);
-            ui.selectable_value(&mut self.tab, Tab::History, "History");
+            if ui
+                .selectable_value(&mut self.tab, Tab::History, "History")
+                .clicked()
+            {
+                // Other windows may have changed the history file since it was last read.
+                self.history_stale = true;
+            }
             ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
                 ui.label(
                     RichText::new("Enter look up · Ctrl+Enter look up & open · Esc quit")
@@ -969,11 +993,16 @@ fn display_name(name: &str) -> &str {
     }
 }
 
+/// A URI egui_extras' file loader maps back to `path` (it strips the scheme, then one `/`
+/// for drive paths, and turns `file://host/…` into a UNC path; it does no percent-decoding).
 fn file_uri(path: &Path) -> String {
-    if cfg!(windows) {
-        format!("file:///{}", path.display().to_string().replace('\\', "/"))
+    let path = path.display().to_string();
+    if !cfg!(windows) {
+        format!("file://{path}")
+    } else if let Some(unc) = path.strip_prefix("\\\\") {
+        format!("file://{}", unc.replace('\\', "/"))
     } else {
-        format!("file://{}", path.display())
+        format!("file:///{}", path.replace('\\', "/"))
     }
 }
 
@@ -1121,6 +1150,7 @@ mod tests {
                     at: 1_700_000_500,
                 }],
             }),
+            history_error: None,
         }
     }
 
@@ -1181,6 +1211,70 @@ mod tests {
         harness.get_by_label("RobinOld");
         harness.get_by_label_contains("seen by you");
         harness.get_by_label("robinwalker (Custom URL name)");
+    }
+
+    #[test]
+    fn late_outcome_for_a_replaced_card_is_ignored() {
+        let tmp = TempDir::new("ui-stale");
+        let mut harness = harness(&tmp);
+        type_query(&mut harness, "76561197960435530");
+        let stale = harness.state().cards[0].uid;
+        type_query(&mut harness, "76561197960435530");
+        let fresh = harness.state().cards[0].uid;
+        assert_ne!(stale, fresh);
+
+        harness.state_mut().apply_outcome(Outcome {
+            card: stale,
+            result: Ok(robin()),
+        });
+        let cards = &harness.state().cards;
+        assert_eq!(cards.len(), 1);
+        assert_eq!(cards[0].uid, fresh);
+        assert!(matches!(
+            cards[0].lookup().unwrap().state,
+            CardState::Loading
+        ));
+    }
+
+    #[test]
+    fn custom_url_resolving_to_a_listed_profile_merges_at_the_top() {
+        let tmp = TempDir::new("ui-merge");
+        let mut harness = harness(&tmp);
+        type_query(&mut harness, "robinwalker");
+        type_query(&mut harness, "76561197960287930 76561197960435530");
+        let vanity = harness.state().cards[2].uid;
+
+        harness.state_mut().apply_outcome(Outcome {
+            card: vanity,
+            result: Ok(robin()),
+        });
+        let cards = &harness.state().cards;
+        assert_eq!(cards.len(), 2);
+        assert_eq!(
+            cards[1].uid, vanity,
+            "takes the listed card's slot, above the original"
+        );
+        assert!(cards[1].resolved().is_some());
+        assert_eq!(
+            cards[0].steam_id().map(SteamId::id64),
+            Some(76_561_197_960_287_930)
+        );
+    }
+
+    #[test]
+    fn history_write_failures_are_reported() {
+        let tmp = TempDir::new("ui-history-error");
+        let mut harness = harness(&tmp);
+        type_query(&mut harness, "76561197960435530");
+        let uid = harness.state().cards[0].uid;
+        let mut resolved = robin();
+        resolved.history_error = Some("disk full".into());
+        harness.state_mut().apply_outcome(Outcome {
+            card: uid,
+            result: Ok(resolved),
+        });
+        harness.run_steps(2);
+        harness.get_by_label_contains("disk full");
     }
 
     #[test]
