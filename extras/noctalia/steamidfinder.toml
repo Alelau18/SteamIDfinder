@@ -1,0 +1,23 @@
+# Optional Noctalia launcher entry for SteamIDfinder.
+#
+# Copy this file to ~/.config/noctalia/ (Noctalia merges every *.toml there and reloads on
+# change), then type in the launcher:
+#
+#   /steam 76561197960287930 STEAM_0:0:11101 gabelogannewell
+#
+# and press Enter to open SteamIDfinder with those IDs already looked up.
+#
+# Noctalia pastes {query} into the command as raw shell text. The quoted heredoc hands it
+# to the app untouched, so [U:1:…], $ and quotes arrive literally. If steamidfinder isn't
+# on the PATH of your login shell, use its absolute path (e.g. ~/.local/bin/steamidfinder).
+
+[shell.launcher.dmenu.entry.steamidfinder]
+label = "SteamIDfinder"
+prefix = "steam"
+glyph = "brand-steam"
+freeform = true
+exec = '''
+steamidfinder "$(cat <<'STEAMIDFINDER_EOF'
+{query}
+STEAMIDFINDER_EOF
+)"'''

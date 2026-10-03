@@ -1,0 +1,11 @@
+[Desktop Entry]
+Type=Application
+Name=SteamIDfinder
+GenericName=Steam Profile Lookup
+Comment=Turn any Steam ID into a Steam profile link
+Exec=steamidfinder
+Icon=steamidfinder
+Terminal=false
+Categories=Utility;
+Keywords=steam;steamid;steam64;steamid64;profile;lookup;
+StartupWMClass=steamidfinder
