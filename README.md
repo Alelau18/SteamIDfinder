@@ -5,6 +5,9 @@
 Paste any Steam ID and get a clickable link to the Steam profile, along with the profile's
 current name, avatar and name history. A small native app for Linux and Windows.
 
+> **Unofficial tool.** SteamIDfinder is an independent project. It is not affiliated with,
+> endorsed by or connected to Valve Corporation or Steam in any way.
+
 ![SteamIDfinder showing two resolved profiles, a not-found custom URL and an invalid input](docs/screenshot.png)
 
 ## What it does
@@ -124,5 +127,8 @@ SCREENSHOT_DIR=/tmp/shots cargo test render_screenshots -- --ignored
 
 ## License
 
-[MIT](LICENSE). SteamIDfinder isn't affiliated with or endorsed by Valve. Steam and the
-Steam logo are trademarks of Valve Corporation.
+[MIT](LICENSE).
+
+SteamIDfinder is an unofficial, community-made tool. It is not affiliated with, endorsed by or
+sponsored by Valve Corporation. Steam and the Steam logo are trademarks of Valve Corporation.
+The SteamIDfinder logo is its own design and is not the Steam logo.

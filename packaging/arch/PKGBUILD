@@ -5,7 +5,7 @@
 #   cd packaging/arch && makepkg -si
 pkgname=steamidfinder-git
 _repo=SteamIDfinder
-pkgver=0.1.0
+pkgver=0.1.1
 pkgrel=1
 pkgdesc='Turn any Steam ID into a Steam profile link, with name, avatar and name history'
 arch=('x86_64' 'aarch64')

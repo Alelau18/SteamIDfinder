@@ -1,6 +1,6 @@
 [package]
 name = "steamidfinder"
-version = "0.1.0"
+version = "0.1.1"
 edition = "2024"
 description = "Turn any Steam ID into a Steam profile link, with name, avatar and name history"
 license = "MIT"
